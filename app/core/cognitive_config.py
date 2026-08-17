@@ -36,6 +36,7 @@ Academic Citations:
 
 from __future__ import annotations
 import os
+import tempfile
 from typing import Literal
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -59,7 +60,7 @@ class CognitiveEngineSettings(BaseSettings):
     app_env: Literal["development", "staging", "production"] = "development"
     app_port: int = 8000
     app_host: str = "0.0.0.0"
-    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+    cors_origins: str = "*"
 
     # -------------------------------------------------------------------------
     # LLM Inference Gateway Configuration
@@ -116,8 +117,21 @@ class CognitiveEngineSettings(BaseSettings):
     yerkes_dodson_burnout_penalty: float = 0.05
 
     @property
+    def effective_qdrant_storage_path(self) -> str:
+        """
+        Dynamically determine writable storage path for embedded Qdrant.
+        In serverless environments (Vercel, AWS Lambda) where CWD is read-only,
+        routes storage to the system's temporary directory.
+        """
+        if os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+            return os.path.join(tempfile.gettempdir(), "qdrant_embedded_storage")
+        return self.qdrant_storage_path
+
+    @property
     def cors_origins_list(self) -> list[str]:
         """Parse comma-separated CORS origins into a sanitized list."""
+        if self.cors_origins.strip() == "*":
+            return ["*"]
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 
 

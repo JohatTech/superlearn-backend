@@ -89,26 +89,32 @@ class MultisourceContrastIngestionEngine:
     """
 
     def __init__(self) -> None:
-        self.storage_path: str = cognitive_settings.qdrant_storage_path
+        self.storage_path: str = cognitive_settings.effective_qdrant_storage_path
         self.collection_name: str = cognitive_settings.qdrant_collection_name
         self.vector_dim: int = cognitive_settings.vector_dimension
 
         # Ensure directory exists for pure Python local on-disk storage
-        os.makedirs(self.storage_path, exist_ok=True)
+        try:
+            os.makedirs(self.storage_path, exist_ok=True)
+            self.qdrant: QdrantClient = QdrantClient(path=self.storage_path)
+        except Exception as exc:
+            logger.warning(f"Could not open on-disk storage at {self.storage_path}. Falling back to in-memory: {exc}")
+            self.qdrant = QdrantClient(location=":memory:")
 
-        # Initialize embedded Qdrant client (zero Docker requirement)
-        self.qdrant: QdrantClient = QdrantClient(path=self.storage_path)
         self._ensure_collection_exists()
 
     def _ensure_collection_exists(self) -> None:
         """Create Qdrant collection if not already initialized."""
-        existing_collections = [c.name for c in self.qdrant.get_collections().collections]
-        if self.collection_name not in existing_collections:
-            logger.info(f"Creating local embedded Qdrant collection '{self.collection_name}' (dim={self.vector_dim})")
-            self.qdrant.create_collection(
-                collection_name=self.collection_name,
-                vectors_config=VectorParams(size=self.vector_dim, distance=Distance.COSINE),
-            )
+        try:
+            existing_collections = [c.name for c in self.qdrant.get_collections().collections]
+            if self.collection_name not in existing_collections:
+                logger.info(f"Creating embedded Qdrant collection '{self.collection_name}' (dim={self.vector_dim})")
+                self.qdrant.create_collection(
+                    collection_name=self.collection_name,
+                    vectors_config=VectorParams(size=self.vector_dim, distance=Distance.COSINE),
+                )
+        except Exception as exc:
+            logger.warning(f"Collection check warning: {exc}")
 
     def _segment_text_semantic_chunks(
         self,

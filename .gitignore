@@ -1,0 +1,32 @@
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Environments & Virtualenv
+.env
+.env.local
+.venv/
+venv/
+ENV/
+env/
+
+# Embedded Vector Storage & Local Data
+qdrant_embedded_storage/
+qdrant_data/
+qdrant_data_test/
+*.db
+*.sqlite
+*.sqlite3
+
+# Distribution & Build artifacts
+build/
+dist/
+*.egg-info/
+
+# IDE & OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
