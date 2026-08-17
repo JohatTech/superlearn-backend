@@ -1,0 +1,17 @@
+"""
+===============================================================================
+V1 API ROUTER AGGREGATION REGISTRY
+===============================================================================
+"""
+
+from app.api.v1.dynamic_syllabus_router import router as dynamic_syllabus_router
+from app.api.v1.multisource_contrast_router import router as multisource_contrast_router
+from app.api.v1.mental_schema_router import router as mental_schema_router
+from app.api.v1.bloom_assessment_router import router as bloom_assessment_router
+
+__all__ = [
+    "dynamic_syllabus_router",
+    "multisource_contrast_router",
+    "mental_schema_router",
+    "bloom_assessment_router",
+]
