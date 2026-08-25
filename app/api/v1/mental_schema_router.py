@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.supabase_persistence_manager import get_db_session
 from app.services.knowledge_graph_engine import knowledge_graph_engine
 from app.services.confusion_compass_diff_engine import confusion_compass_engine
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 
 router = APIRouter(prefix="/api/v1/schema", tags=["Mental Schema & Confusion Compass"])
 
@@ -105,3 +106,23 @@ async def add_edge_to_mental_schema(
 async def execute_confusion_compass_diff() -> dict[str, Any]:
     """Run structural graph diff to reveal misconceptions."""
     return confusion_compass_engine.compute_graph_discrepancy_matrix()
+
+@router.post(
+    "/parse-mindmap",
+    status_code=status.HTTP_200_OK,
+    summary="Parse Mind Map Image",
+    description="Ingests multipart image data and extracts a DAG schema."
+)
+async def parse_mindmap(
+    file: UploadFile = File(...),
+    db_session: AsyncSession = Depends(get_db_session),
+) -> dict[str, Any]:
+    """Extract DAG from uploaded mind map image."""
+    # Placeholder for OCR/Vision parser integration (DocTR + Gemini Vision)
+    # This would usually call out to an external OCR/Vision service.
+    return {
+        "status": "success", 
+        "message": "Mind map parsed successfully (mock)", 
+        "nodes": [], 
+        "edges": []
+    }

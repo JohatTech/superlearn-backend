@@ -6,13 +6,13 @@ pydantic-settings==2.7.0
 # Database
 sqlalchemy==2.0.36
 asyncpg==0.30.0
-supabase==2.10.0
+supabase
 
 # Vector DB
 qdrant-client==1.12.1
 
 # LLM / HTTP
-httpx==0.28.1
+httpx
 openai==1.58.1
 
 # Graph
