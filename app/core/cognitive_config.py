@@ -38,6 +38,7 @@ from __future__ import annotations
 import os
 import tempfile
 from typing import Literal
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -127,12 +128,31 @@ class CognitiveEngineSettings(BaseSettings):
             return os.path.join(tempfile.gettempdir(), "qdrant_embedded_storage")
         return self.qdrant_storage_path
 
+    @model_validator(mode="after")
+    def validate_production_cors(self) -> CognitiveEngineSettings:
+        """Ensure wildcard CORS is never permitted in production environments."""
+        if self.app_env == "production" and self.cors_origins.strip() == "*":
+            raise ValueError(
+                "Wildcard CORS origin ('*') is strictly forbidden in production mode. "
+                "Specify explicit origin domains via CORS_ORIGINS (e.g. 'https://app.superlearn.ai')."
+            )
+        return self
+
     @property
     def cors_origins_list(self) -> list[str]:
-        """Parse comma-separated CORS origins into a sanitized list."""
-        if self.cors_origins.strip() == "*":
+        """
+        Parse comma-separated CORS origins into a sanitized list.
+        Strips whitespace and trailing slashes for clean origin matching.
+        """
+        raw = self.cors_origins.strip()
+        if raw == "*":
             return ["*"]
-        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+        sanitized: list[str] = []
+        for origin in raw.split(","):
+            cleaned = origin.strip().rstrip("/")
+            if cleaned:
+                sanitized.append(cleaned)
+        return sanitized
 
 
 # Global configuration singleton instance
