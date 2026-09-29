@@ -107,9 +107,10 @@ class TestPedagogicalRationaleFormulation:
 class TestStabilityAndDifficultyUpdates:
     """Test suite for post-assessment memory parameter updates."""
 
-    def test_grade_3_mastered_update(self, populated_knowledge_graph: KnowledgeGraphEngine):
+    @pytest.mark.asyncio
+    async def test_grade_3_mastered_update(self, populated_knowledge_graph: KnowledgeGraphEngine):
         """High score (>= 0.85) yields Grade 3 and expands stability significantly."""
-        result = fsrs_scheduler.update_stability_post_assessment(
+        result = await fsrs_scheduler.update_stability_post_assessment(
             concept_id="concept-b",
             evaluation_score=0.90,
             effort_latency_seconds=120,
@@ -123,9 +124,10 @@ class TestStabilityAndDifficultyUpdates:
         # Optimal effort (120s) -> effort reward = exp(0) = 1.0
         assert result["yerkes_dodson_effort_reward"] == 1.0
 
-    def test_grade_2_solid_update(self, populated_knowledge_graph: KnowledgeGraphEngine):
+    @pytest.mark.asyncio
+    async def test_grade_2_solid_update(self, populated_knowledge_graph: KnowledgeGraphEngine):
         """Score in [0.65, 0.85) yields Grade 2 and moderate expansion."""
-        result = fsrs_scheduler.update_stability_post_assessment(
+        result = await fsrs_scheduler.update_stability_post_assessment(
             concept_id="concept-b",
             evaluation_score=0.75,
             effort_latency_seconds=120,
@@ -136,9 +138,10 @@ class TestStabilityAndDifficultyUpdates:
         # Grade 2 -> difficulty delta = (3 - 2) * 0.1 = +0.1 -> D' = 5.1
         assert result["new_difficulty"] == 5.1
 
-    def test_grade_1_struggling_update(self, populated_knowledge_graph: KnowledgeGraphEngine):
+    @pytest.mark.asyncio
+    async def test_grade_1_struggling_update(self, populated_knowledge_graph: KnowledgeGraphEngine):
         """Score in [0.40, 0.65) yields Grade 1, 10% stability growth, difficulty increases."""
-        result = fsrs_scheduler.update_stability_post_assessment(
+        result = await fsrs_scheduler.update_stability_post_assessment(
             concept_id="concept-b",
             evaluation_score=0.50,
             effort_latency_seconds=120,
@@ -149,9 +152,10 @@ class TestStabilityAndDifficultyUpdates:
         # Grade 1 -> difficulty delta = (3 - 1) * 0.1 = +0.2 -> D' = 5.2
         assert result["new_difficulty"] == 5.2
 
-    def test_grade_0_lapse_update(self, populated_knowledge_graph: KnowledgeGraphEngine):
+    @pytest.mark.asyncio
+    async def test_grade_0_lapse_update(self, populated_knowledge_graph: KnowledgeGraphEngine):
         """Score < 0.40 yields Grade 0 (lapse), compressing stability toward recovery floor."""
-        result = fsrs_scheduler.update_stability_post_assessment(
+        result = await fsrs_scheduler.update_stability_post_assessment(
             concept_id="concept-b",
             evaluation_score=0.20,
             effort_latency_seconds=120,
@@ -162,11 +166,12 @@ class TestStabilityAndDifficultyUpdates:
         # Grade 0 -> difficulty delta = (3 - 0) * 0.1 = +0.3 -> D' = 5.3
         assert result["new_difficulty"] == 5.3
 
-    def test_yerkes_dodson_effort_reward_curve(self, populated_knowledge_graph: KnowledgeGraphEngine):
+    @pytest.mark.asyncio
+    async def test_yerkes_dodson_effort_reward_curve(self, populated_knowledge_graph: KnowledgeGraphEngine):
         """Yerkes-Dodson effort score is maximized at 120s and decays symmetrically for deviations."""
-        res_optimal = fsrs_scheduler.update_stability_post_assessment("concept-b", 0.80, 120)
-        res_fast = fsrs_scheduler.update_stability_post_assessment("concept-b", 0.80, 30)
-        res_slow = fsrs_scheduler.update_stability_post_assessment("concept-b", 0.80, 210)
+        res_optimal = await fsrs_scheduler.update_stability_post_assessment(concept_id="concept-b", evaluation_score=0.80, effort_latency_seconds=120)
+        res_fast = await fsrs_scheduler.update_stability_post_assessment(concept_id="concept-b", evaluation_score=0.80, effort_latency_seconds=30)
+        res_slow = await fsrs_scheduler.update_stability_post_assessment(concept_id="concept-b", evaluation_score=0.80, effort_latency_seconds=210)
 
         # 120s is peak
         assert res_optimal["yerkes_dodson_effort_reward"] == 1.0
@@ -178,9 +183,10 @@ class TestStabilityAndDifficultyUpdates:
 class TestPriorityRecommendations:
     """Test suite for FSRS developmental frontier prioritization."""
 
-    def test_recommendations_ranking_structure(self, populated_knowledge_graph: KnowledgeGraphEngine):
+    @pytest.mark.asyncio
+    async def test_recommendations_ranking_structure(self, populated_knowledge_graph: KnowledgeGraphEngine):
         """Frontier concepts should be evaluated and ranked descending by composite priority score."""
-        recommendations = fsrs_scheduler.compute_priority_recommendations(top_k=5)
+        recommendations = await fsrs_scheduler.compute_priority_recommendations(top_k=5)
         assert len(recommendations) > 0
 
         # Assert descending sort by priority_score

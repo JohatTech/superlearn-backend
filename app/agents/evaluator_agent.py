@@ -5,6 +5,7 @@ EVALUATOR & AUDITOR AGENT (COGNITIVE EVALUATOR & GRAPH AUDITOR)
 """
 
 from __future__ import annotations
+import json
 import logging
 from typing import Any, Dict, List
 from app.agents.base_agent import BaseAgent
@@ -14,6 +15,10 @@ logger = logging.getLogger("superlearn.agents.evaluator")
 
 EVALUATION_SYSTEM_PROMPT = """You are a rigorous cognitive assessment rubric evaluator.
 Analyze the student's answer for conceptual correctness, depth of mechanistic explanation, and subtle misconceptions.
+You have access to tools:
+- retrieve_knowledge_corpus: query local textbooks, course notes, and ground-truth definitions to rigorously verify student statements.
+(Note: External web search is disabled for evaluation security).
+
 Respond ONLY with a valid JSON object in the exact specified schema."""
 
 EVALUATION_TEMPLATE = """Evaluate this student answer against Bloom's Taxonomy Level {bloom_tier} standards.
@@ -42,6 +47,9 @@ Note: 'score' must be a continuous float in [0.0, 1.0]."""
 
 GRAPH_AUDIT_SYSTEM_PROMPT = """You are an expert cognitive psychologist and curriculum auditor.
 Analyze the provided mental schema graph layout (nodes and connection edges) to detect misconceptions, circular learning loops, logical gaps, or incorrect sequence structures.
+You have access to tools:
+- retrieve_knowledge_corpus: query canonical prerequisite relationships and definitions from the indexed course materials.
+
 Respond ONLY with a valid JSON object in the exact specified schema."""
 
 GRAPH_AUDIT_TEMPLATE = """Audit this student mental schema graph representation.
@@ -77,12 +85,14 @@ Respond ONLY with this JSON structure:
 class EvaluatorAgent(BaseAgent):
     """
     Agent responsible for scoring responses and auditing knowledge graphs.
+    Equipped with LangChain Agentic RAG: Vector Knowledge Retrieval (Web Search disabled).
     """
 
     def __init__(self) -> None:
         super().__init__(
             model_name=cognitive_settings.agent_evaluator_model,
             temperature=0.2,  # Low temperature for strict grading and auditing consistency
+            enable_web_search=False,
         )
 
     async def evaluate_answer(
@@ -93,7 +103,7 @@ class EvaluatorAgent(BaseAgent):
         bloom_tier: int = 4,
     ) -> Dict[str, Any]:
         """
-        Evaluate and score a student's answer using the evaluation rubric.
+        Evaluate and score a student's answer using the evaluation rubric via Agentic RAG.
         """
         logger.info(f"Evaluator Agent grading answer for '{concept_name}' using model {self.model_name}")
         prompt = EVALUATION_TEMPLATE.format(
@@ -103,12 +113,11 @@ class EvaluatorAgent(BaseAgent):
             student_answer=student_answer,
         )
 
-        raw_response = await self.invoke_chat(
-            prompt=prompt,
-            system_instruction=EVALUATION_SYSTEM_PROMPT,
-        )
-
         try:
+            raw_response = await self.invoke_agentic_rag(
+                prompt=prompt,
+                system_instruction=EVALUATION_SYSTEM_PROMPT,
+            )
             parsed = self.parse_json(raw_response)
             return {
                 "score": float(parsed.get("score", 0.5)),
@@ -119,7 +128,7 @@ class EvaluatorAgent(BaseAgent):
                 "suggested_review_concepts": parsed.get("suggested_review_concepts", []),
             }
         except Exception as exc:
-            logger.error(f"Evaluator Agent grading failed: {exc}. Raw response: {raw_response}")
+            logger.error(f"Evaluator Agent grading failed: {exc}")
             # Fallback safe grade
             return {
                 "score": 0.5,
@@ -136,26 +145,28 @@ class EvaluatorAgent(BaseAgent):
         edges: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
         """
-        Execute structural and cognitive audit of the student's mental model graph.
+        Execute structural and cognitive audit of the student's mental model graph via Agentic RAG.
         """
         logger.info(f"Evaluator Agent auditing knowledge graph ({len(concepts)} nodes, {len(edges)} edges)")
-        
+
         prompt = GRAPH_AUDIT_TEMPLATE.format(
             concepts=json.dumps(concepts, indent=2),
             edges=json.dumps(edges, indent=2),
         )
 
-        raw_response = await self.invoke_chat(
-            prompt=prompt,
-            system_instruction=GRAPH_AUDIT_SYSTEM_PROMPT,
-        )
-
         try:
+            raw_response = await self.invoke_agentic_rag(
+                prompt=prompt,
+                system_instruction=GRAPH_AUDIT_SYSTEM_PROMPT,
+            )
             return self.parse_json(raw_response)
         except Exception as exc:
-            logger.error(f"Evaluator Agent audit parsing failed: {exc}. Raw response: {raw_response}")
+            logger.error(f"Evaluator Agent audit parsing failed: {exc}")
             return {
                 "has_warnings": False,
                 "warnings": [],
                 "recommendations": ["No audit recommendations available."],
             }
+
+
+evaluator_agent: EvaluatorAgent = EvaluatorAgent()

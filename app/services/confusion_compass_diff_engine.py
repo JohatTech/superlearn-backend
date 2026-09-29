@@ -43,7 +43,7 @@ class ConfusionCompassDiffEngine:
 
     async def compute_graph_discrepancy_matrix(
         self,
-        db_session: AsyncSession,
+        db_session: Optional[AsyncSession] = None,
         classroom_id: Optional[str] = None,
     ) -> dict[str, Any]:
         """

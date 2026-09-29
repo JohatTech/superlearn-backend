@@ -33,7 +33,7 @@ class CognitiveEngineSettings(BaseSettings):
     app_name: str = "SuperLearn Cognitive Engine"
     app_version: str = "1.0.0-mvp"
     app_env: Literal["development", "staging", "production"] = "development"
-    app_port: int = 8000
+    app_port: int = 8001
     app_host: str = "0.0.0.0"
     cors_origins: str = "*"
 
@@ -58,12 +58,16 @@ class CognitiveEngineSettings(BaseSettings):
     agent_evaluator_model: str = "qwen2.5:7b-instruct"
     agent_study_materials_model: str = "qwen2.5:3b-instruct"
 
+    # Multi-Model Syllabus Benchmarking
+    phi_model_name: str = "phi4-mini:latest"
+    qwen_model_name: str = "qwen2.5:3b-instruct"
+
     # Azure OpenAI Service Configuration (Enterprise cloud fallback)
     azure_openai_endpoint: str = ""
     azure_openai_key: str = ""
-    azure_openai_deployment: str = "gpt-4o"
+    azure_openai_deployment: str = "gpt-5.4-mini"
     azure_openai_embed_deployment: str = "text-embedding-3-small"
-    azure_openai_api_version: str = "2024-02-01"
+    azure_openai_api_version: str = "2025-04-01-preview"
 
     # -------------------------------------------------------------------------
     # Mind Map OCR & Document Intelligence Engine
@@ -124,6 +128,7 @@ class CognitiveEngineSettings(BaseSettings):
     db_pool_size: int = 10
     db_max_overflow: int = 20
     db_pool_timeout: float = 30.0
+    use_local_sqlite: bool = False
 
     # -------------------------------------------------------------------------
     # Vector Indexing Engine (Embedded Pure Python Qdrant)
@@ -150,7 +155,10 @@ class CognitiveEngineSettings(BaseSettings):
         """
         Dynamically sanitize and format the database URL for SQLAlchemy asyncpg driver.
         Prioritizes non-pooling or direct pooler URLs provided by Supabase / Vercel integrations.
+        Falls back to local SQLite if use_local_sqlite is enabled or env var USE_LOCAL_SQLITE=true.
         """
+        if self.use_local_sqlite or os.environ.get("USE_LOCAL_SQLITE", "").lower() in ("true", "1", "yes"):
+            return "sqlite+aiosqlite:///./superlearn.db"
         raw = (
             self.database_url
             or self.superlearn_postgres_url_non_pooling
@@ -168,6 +176,11 @@ class CognitiveEngineSettings(BaseSettings):
 
         if not raw:
             return "sqlite+aiosqlite:///./superlearn_local.db"
+
+        if raw.startswith("sqlite"):
+            if raw.startswith("sqlite:///") and not raw.startswith("sqlite+aiosqlite:///"):
+                return raw.replace("sqlite:///", "sqlite+aiosqlite:///")
+            return raw
 
         url = raw
         if "://" in url:

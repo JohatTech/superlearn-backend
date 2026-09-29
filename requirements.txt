@@ -11,9 +11,16 @@ supabase
 # Vector DB
 qdrant-client==1.12.1
 
-# LLM / HTTP
+# LLM / HTTP / LangChain Agentic RAG
 httpx
-openai==1.58.1
+openai>=1.58.1
+langchain>=1.4.0
+langchain-core>=1.6.0
+langchain-community>=0.4.0
+langchain-openai>=1.6.0
+langchain-ollama>=1.1.0
+duckduckgo-search>=8.1.0
+ddgs>=9.16.0
 
 # Graph
 networkx==3.4.2

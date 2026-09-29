@@ -60,7 +60,7 @@ class FsrsSpacedRetrievalScheduler:
 
     async def compute_priority_recommendations(
         self,
-        db_session: AsyncSession,
+        db_session: Optional[AsyncSession] = None,
         classroom_id: Optional[str] = None,
         top_k: int = 5,
     ) -> list[dict[str, Any]]:
@@ -119,10 +119,10 @@ class FsrsSpacedRetrievalScheduler:
 
     async def update_stability_post_assessment(
         self,
-        db_session: AsyncSession,
         concept_id: str,
         evaluation_score: float,
         effort_latency_seconds: int,
+        db_session: Optional[AsyncSession] = None,
         classroom_id: Optional[str] = None,
     ) -> dict[str, Any]:
         """

@@ -30,6 +30,7 @@ from app.api.v1 import (
     mental_schema_router,
     bloom_assessment_router,
     syllabus_master_router,
+    study_materials_router,
 )
 
 # Configure structured logging
@@ -96,6 +97,7 @@ app.include_router(multisource_contrast_router)
 app.include_router(mental_schema_router)
 app.include_router(bloom_assessment_router)
 app.include_router(syllabus_master_router)
+app.include_router(study_materials_router)
 
 
 

@@ -23,6 +23,10 @@ BLOOM_TIER_LABELS: dict[int, str] = {
 
 QUESTION_SYNTHESIS_SYSTEM_PROMPT = """You are an elite cognitive psychology professor designing rigorous university-level exam questions.
 Your goal is to test deep conceptual understanding and transfer, NOT rote memorization.
+You have access to tools:
+- retrieve_knowledge_corpus: query local textbooks, course notes, and domain definitions to ground your questions.
+(Note: External web search is disabled for exam generation security).
+
 You must respond ONLY with a valid JSON object in the exact specified schema."""
 
 QUESTION_SYNTHESIS_TEMPLATE = """Synthesize a Bloom's Taxonomy Level {bloom_tier} ({bloom_label}) assessment question for the concept: "{concept_name}".
@@ -46,12 +50,14 @@ Respond ONLY with this JSON structure:
 class TestGeneratorAgent(BaseAgent):
     """
     Agent responsible for generating rigorous Bloom's taxonomy questions.
+    Equipped with LangChain Agentic RAG: Vector Knowledge Retrieval (Web Search disabled).
     """
 
     def __init__(self) -> None:
         super().__init__(
             model_name=cognitive_settings.agent_test_gen_model,
             temperature=0.8,  # Slightly higher temperature for creative questions
+            enable_web_search=False,
         )
 
     async def generate_question(
@@ -61,10 +67,10 @@ class TestGeneratorAgent(BaseAgent):
         bloom_tier: int = 4,
     ) -> Dict[str, Any]:
         """
-        Query LLM to synthesize a specific taxonomy tier question for the given concept.
+        Query LLM to synthesize a specific taxonomy tier question for the given concept via Agentic RAG.
         """
         logger.info(f"Test Gen Agent synthesizing question for '{concept_name}' (Tier {bloom_tier}) using model {self.model_name}")
-        
+
         bloom_label = BLOOM_TIER_LABELS.get(bloom_tier, "Analyze")
         prompt = QUESTION_SYNTHESIS_TEMPLATE.format(
             bloom_tier=bloom_tier,
@@ -73,12 +79,11 @@ class TestGeneratorAgent(BaseAgent):
             concept_description=concept_description or "No reference context available.",
         )
 
-        raw_response = await self.invoke_chat(
-            prompt=prompt,
-            system_instruction=QUESTION_SYNTHESIS_SYSTEM_PROMPT,
-        )
-
         try:
+            raw_response = await self.invoke_agentic_rag(
+                prompt=prompt,
+                system_instruction=QUESTION_SYNTHESIS_SYSTEM_PROMPT,
+            )
             parsed = self.parse_json(raw_response)
             return {
                 "question": parsed.get("question", f"Explain the main characteristics of {concept_name}."),
@@ -86,7 +91,7 @@ class TestGeneratorAgent(BaseAgent):
                 "expected_synthesis_scope": parsed.get("expected_synthesis_scope", "2-4 paragraphs"),
             }
         except Exception as exc:
-            logger.error(f"Test Gen Agent parsing failed: {exc}. Raw response: {raw_response}")
+            logger.error(f"Test Gen Agent parsing failed: {exc}")
             # Fallback
             return {
                 "question": f"Explain the key architectural and design principles of '{concept_name}' and deconstruct its operational tradeoffs.",
@@ -94,3 +99,5 @@ class TestGeneratorAgent(BaseAgent):
                 "expected_synthesis_scope": "2-4 paragraphs",
             }
 
+
+test_generator_agent: TestGeneratorAgent = TestGeneratorAgent()

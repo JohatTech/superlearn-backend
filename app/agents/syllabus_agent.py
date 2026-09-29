@@ -11,7 +11,6 @@ import logging
 from typing import Any, Dict, List
 from app.agents.base_agent import BaseAgent
 from app.core.cognitive_config import cognitive_settings
-from app.core.llm_inference_gateway import llm_gateway
 
 logger = logging.getLogger("superlearn.agents.syllabus")
 
@@ -21,6 +20,11 @@ logger = logging.getLogger("superlearn.agents.syllabus")
 
 SYLLABUS_ARCHITECT_SYSTEM_PROMPT = """You are an elite university curriculum architect.
 Create a structured university course blueprint for the subject.
+You have access to tools:
+- retrieve_knowledge_corpus: query local textbooks and ingested course materials.
+- search_web: search the web for latest university syllabi, curriculum standards, and topics.
+Use your tools if you need to ground your blueprint in authoritative references.
+
 Identify 6 to 8 major academic modules progressing from fundamentals to advanced mastery.
 Keep descriptions concise (1 sentence).
 
@@ -74,45 +78,30 @@ Expand these {module_count} modules into 3 to 5 lessons each:
 class SyllabusAgent(BaseAgent):
     """
     High-Speed Multi-Stage Agent delivering university-grade curricula.
-    Supports both Azure OpenAI and local Ollama inference via LLM Gateway.
+    Equipped with LangChain Agentic RAG: Vector Knowledge Retrieval and Web Search.
     """
 
     def __init__(self) -> None:
         super().__init__(
             model_name=cognitive_settings.agent_syllabus_model,
             temperature=0.2,
+            enable_web_search=True,
         )
 
     def robust_json_parse(self, raw_text: str) -> dict:
         """
         Extracts valid JSON from response.
         """
-        clean_text = raw_text.strip()
-        if "```json" in clean_text:
-            clean_text = clean_text.split("```json", 1)[1]
-            if "```" in clean_text:
-                clean_text = clean_text.split("```", 1)[0]
-        elif "```" in clean_text:
-            clean_text = clean_text.split("```", 1)[1]
-            if "```" in clean_text:
-                clean_text = clean_text.split("```", 1)[0]
-
-        clean_text = clean_text.strip()
-        start_idx = clean_text.find("{")
-        end_idx = clean_text.rfind("}")
-        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-            clean_text = clean_text[start_idx : end_idx + 1]
-
-        return json.loads(clean_text)
+        return self.parse_json(raw_text)
 
     async def _stage1_architect_curriculum(self, topic: str) -> Dict[str, Any]:
         """
-        Stage 1: Fast architecture generation (6-8 modules).
+        Stage 1: Fast architecture generation (6-8 modules) via Agentic RAG.
         """
         prompt = SYLLABUS_ARCHITECT_USER_TEMPLATE.format(topic=topic)
 
         try:
-            raw_response = await self.invoke_chat(
+            raw_response = await self.invoke_agentic_rag(
                 prompt=prompt,
                 system_instruction=SYLLABUS_ARCHITECT_SYSTEM_PROMPT,
             )
@@ -145,7 +134,7 @@ class SyllabusAgent(BaseAgent):
         modules_batch: List[Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
         """
-        Stage 2: Batched expansion of 3-4 modules.
+        Stage 2: Batched expansion of 3-4 modules via Agentic RAG.
         """
         modules_context_lines = [
             f"- Mod {m.get('order', i+1)}: \"{m.get('name', 'Module')}\" ({m.get('description', '')})"
@@ -160,7 +149,7 @@ class SyllabusAgent(BaseAgent):
         )
 
         try:
-            raw_response = await self.invoke_chat(
+            raw_response = await self.invoke_agentic_rag(
                 prompt=prompt,
                 system_instruction=BATCH_MODULE_EXPANSION_SYSTEM_PROMPT,
             )
@@ -172,7 +161,7 @@ class SyllabusAgent(BaseAgent):
                 for orig_mod in modules_batch:
                     orig_order = orig_mod.get("order")
                     orig_name = orig_mod.get("name", "")
-                    
+
                     match = next(
                         (
                             p for p in parsed_modules

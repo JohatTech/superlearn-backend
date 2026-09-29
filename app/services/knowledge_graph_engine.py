@@ -137,21 +137,21 @@ class KnowledgeGraphEngine:
         )
 
     async def get_grand_graph(
-        self, db_session: AsyncSession, classroom_id: Optional[str] = None
+        self, db_session: Optional[AsyncSession] = None, classroom_id: Optional[str] = None
     ) -> nx.DiGraph:
         """Retrieve grand graph for classroom, hydrating if needed."""
         if classroom_id:
-            if classroom_id not in self._classroom_grand_graphs:
+            if classroom_id not in self._classroom_grand_graphs and db_session is not None:
                 await self.synchronize_from_database(db_session, classroom_id)
             return self._classroom_grand_graphs.get(classroom_id, nx.DiGraph())
         return self._grand_graph
 
     async def get_user_graph(
-        self, db_session: AsyncSession, classroom_id: Optional[str] = None
+        self, db_session: Optional[AsyncSession] = None, classroom_id: Optional[str] = None
     ) -> nx.DiGraph:
         """Retrieve user mental model graph for classroom, hydrating if needed."""
         if classroom_id:
-            if classroom_id not in self._classroom_user_graphs:
+            if classroom_id not in self._classroom_user_graphs and db_session is not None:
                 await self.synchronize_from_database(db_session, classroom_id)
             return self._classroom_user_graphs.get(classroom_id, nx.DiGraph())
         return self._user_mental_graph
@@ -161,7 +161,7 @@ class KnowledgeGraphEngine:
     # -------------------------------------------------------------------------
 
     async def export_grand_graph_react_flow(
-        self, db_session: AsyncSession, classroom_id: Optional[str] = None
+        self, db_session: Optional[AsyncSession] = None, classroom_id: Optional[str] = None
     ) -> dict[str, list[dict[str, Any]]]:
         """
         Format canonical Grand Schema into React Flow nodes and edges JSON specification.
@@ -200,14 +200,14 @@ class KnowledgeGraphEngine:
                 "id": data.get("id", f"edge-{source_id}-{target_id}"),
                 "source": str(source_id),
                 "target": str(target_id),
-                "label": data.get("semantic_relation_label", "prerequisite_for"),
+                "label": data.get("semantic_relation_label", "prerequisite_of"),
                 "classroom_id": data.get("classroom_id"),
             })
 
         return {"nodes": react_nodes, "edges": react_edges}
 
     async def export_user_mental_graph_react_flow(
-        self, db_session: AsyncSession, classroom_id: Optional[str] = None
+        self, db_session: Optional[AsyncSession] = None, classroom_id: Optional[str] = None
     ) -> dict[str, list[dict[str, Any]]]:
         """
         Format student-constructed mental model into React Flow schema.
@@ -253,7 +253,7 @@ class KnowledgeGraphEngine:
         return {"nodes": react_nodes, "edges": react_edges}
 
     async def compute_prerequisite_frontier_concepts(
-        self, db_session: AsyncSession, classroom_id: Optional[str] = None
+        self, db_session: Optional[AsyncSession] = None, classroom_id: Optional[str] = None
     ) -> list[dict[str, Any]]:
         """
         Calculate all concepts currently positioned on the learner's developmental frontier.

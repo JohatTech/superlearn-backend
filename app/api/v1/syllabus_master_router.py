@@ -21,6 +21,7 @@ from app.models.cognitive_domain_models import (
 )
 from app.services.syllabus_master_engine import syllabus_master_engine
 from app.services.knowledge_graph_engine import knowledge_graph_engine
+from app.services.syllabus_comparison_service import syllabus_comparison_service
 
 router = APIRouter(prefix="/api/v1", tags=["Syllabus Master & Classrooms"])
 
@@ -67,6 +68,30 @@ async def generate_syllabus_preview(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate syllabus: {exc}",
+        )
+
+
+@router.post(
+    "/syllabus-master/compare-models",
+    summary="Sequential Multi-Model Syllabus Comparison Benchmark",
+    description=(
+        "Executes sequential syllabus generation across Phi, Qwen, and Azure OpenAI models. "
+        "Measures hardware GPU usage, VRAM consumption, and inference latency for side-by-side benchmarking."
+    ),
+)
+async def compare_syllabus_models(
+    payload: GenerateSyllabusRequestSchema,
+) -> Dict[str, Any]:
+    try:
+        topic = payload.topic.strip()
+        if not topic:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Topic prompt cannot be empty.")
+        result = await syllabus_comparison_service.generate_comparison(topic=topic)
+        return result
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Multi-model syllabus comparison benchmark failed: {exc}",
         )
 
 
