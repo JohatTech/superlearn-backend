@@ -6,32 +6,6 @@ COGNITIVE ENGINE CONFIGURATION & PARAMETER REGISTRY
 This module manages all configuration parameters, environment bindings, and 
 hyperparameters governing cognitive algorithms, memory stability modeling, 
 vector indexing, and multimodal LLM inference gateways.
-
-Mathematical Foundations & Default Hyperparameters:
----------------------------------------------------
-1. Free Spaced Repetition Scheduler (FSRS v4.5):
-   - Request Retention Target (r_target): 0.75 (Desirable Difficulty Zone)
-   - Initial Stability Default (S_0): 1.0 day
-   - Initial Difficulty Default (D_0): 5.0 (on scale 1.0 to 10.0)
-
-2. Yerkes-Dodson Effort Function Weights:
-   - Target Effort Latency (tau_star): 120.0 seconds
-   - Effort Dispersion (sigma_tau): 45.0 seconds
-   - Burnout Decay Factor (kappa): 0.05
-
-3. Maximal Marginal Relevance (MMR) Document Alignment:
-   - Diversity Tradeoff (lambda_mmr): 0.70
-
-Academic Citations:
--------------------
-- Ye, J., et al. (2024). "Optimizing Spaced Repetition Schedules via Recurrent 
-  Neural Memory Decay Models." Journal of Artificial Intelligence in Education.
-- Bjork, R. A. (1994). "Memory and metamemory considerations in the training of 
-  human beings." In J. Metcalfe & A. Shimamura (Eds.), Metacognition: Knowing 
-  about knowing (pp. 185-205). MIT Press.
-- Carbonell, J., & Goldstein, J. (1998). "The use of MMR, diversity-based 
-  reranking for reordering documents and producing summaries." In Proceedings 
-  of ACM SIGIR (pp. 335-336).
 """
 
 from __future__ import annotations
@@ -70,10 +44,19 @@ class CognitiveEngineSettings(BaseSettings):
     llm_provider: Literal["ollama", "azure"] = "ollama"
 
     # Ollama Local Service Configuration (Native binary execution on host)
-    ollama_base_url: str = "http://localhost:11434"
+    ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_model: str = "llama3.2"
     ollama_embed_model: str = "nomic-embed-text"
     ollama_request_timeout: float = 120.0
+
+    # Agentic Multi-Model Pipelines (LangChain + Ollama)
+    agent_syllabus_model: str = "qwen2.5:3b-instruct"
+    agent_syllabus_expansion_model: str = "qwen2.5:3b-instruct"
+    agent_syllabus_module_batch_size: int = 4
+    agent_syllabus_max_concurrent_expansions: int = 1
+    agent_test_gen_model: str = "qwen2.5:3b-instruct"
+    agent_evaluator_model: str = "qwen2.5:7b-instruct"
+    agent_study_materials_model: str = "qwen2.5:3b-instruct"
 
     # Azure OpenAI Service Configuration (Enterprise cloud fallback)
     azure_openai_endpoint: str = ""
@@ -83,12 +66,61 @@ class CognitiveEngineSettings(BaseSettings):
     azure_openai_api_version: str = "2024-02-01"
 
     # -------------------------------------------------------------------------
+    # Mind Map OCR & Document Intelligence Engine
+    # -------------------------------------------------------------------------
+    # Options: "azure_di" (Azure Document Intelligence v4), "opensource" (PaddleOCR / GLM-OCR API), "auto"
+    mindmap_ocr_provider: Literal["azure_di", "opensource", "auto"] = "auto"
+    
+    # Azure Document Intelligence (Read / Layout API v4)
+    # Reads from AZURE_DI_ENDPOINT and AZURE_DI_KEY env vars
+    azure_di_endpoint: str = ""
+    azure_di_key: str = ""
+    azure_di_api_version: str = "2024-11-30"
+
+    @property
+    def effective_azure_di_endpoint(self) -> str:
+        """Resolves Azure DI endpoint from multiple possible env var names."""
+        import os
+        return (
+            self.azure_di_endpoint
+            or os.environ.get("AZURE_DI_ENDPOINT")
+            or os.environ.get("AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT")
+            or ""
+        ).strip()
+
+    @property
+    def effective_azure_di_key(self) -> str:
+        """Resolves Azure DI API key from multiple possible env var names."""
+        import os
+        return (
+            self.azure_di_key
+            or os.environ.get("AZURE_DI_KEY")
+            or os.environ.get("AZURE_DOCUMENT_INTELLIGENCE_KEY")
+            or ""
+        ).strip()
+
+    # Open Source OCR Service URL (e.g. PaddleOCR-VL, GLM-OCR, or custom service)
+    opensource_ocr_url: str = "http://127.0.0.1:8000/v1"
+
+
+    # -------------------------------------------------------------------------
     # Relational Persistence (Supabase / PostgreSQL)
     # -------------------------------------------------------------------------
     supabase_url: str = ""
     supabase_anon_key: str = ""
-    # Async connection string for SQLAlchemy (asyncpg driver)
-    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/superlearn"
+    database_url: str = ""
+
+    # Vercel & Supabase integration environment variable aliases
+    superlearn_postgres_url: str = ""
+    superlearn_postgres_url_non_pooling: str = ""
+    superlearn_postgres_prisma_url: str = ""
+    postgres_url: str = ""
+    postgres_url_non_pooling: str = ""
+    next_public_superlearn_taxgensupabase_url: str = ""
+    next_public_superlearn_taxgensupabase_anon_key: str = ""
+    next_public_supabase_url: str = ""
+    next_public_supabase_anon_key: str = ""
+
     db_pool_size: int = 10
     db_max_overflow: int = 20
     db_pool_timeout: float = 30.0
@@ -96,7 +128,6 @@ class CognitiveEngineSettings(BaseSettings):
     # -------------------------------------------------------------------------
     # Vector Indexing Engine (Embedded Pure Python Qdrant)
     # -------------------------------------------------------------------------
-    # Running embedded pure Python mode avoids Docker dependencies
     qdrant_storage_path: str = "./qdrant_embedded_storage"
     qdrant_collection_name: str = "cognitive_knowledge_corpus"
     vector_dimension: int = 768  # Standard dimension for nomic-embed-text
@@ -104,18 +135,85 @@ class CognitiveEngineSettings(BaseSettings):
     # -------------------------------------------------------------------------
     # Cognitive Science Hyperparameters & Algorithmic Weights
     # -------------------------------------------------------------------------
-    # FSRS Desirable Difficulty Recall Target: R(t) in [0.70, 0.80]
     fsrs_target_retention: float = 0.75
     fsrs_stability_growth_factor: float = 0.50
     fsrs_difficulty_decay_factor: float = 0.10
 
-    # Maximal Marginal Relevance (MMR) Parameter
-    mmr_lambda_tradeoff: float = 0.70  # Balance: 0.7 relevance, 0.3 diversity
+    mmr_lambda_tradeoff: float = 0.70
 
-    # Yerkes-Dodson Optimal Effort Parameters
     yerkes_dodson_optimal_seconds: float = 120.0
     yerkes_dodson_dispersion: float = 45.0
     yerkes_dodson_burnout_penalty: float = 0.05
+
+    @property
+    def async_database_url(self) -> str:
+        """
+        Dynamically sanitize and format the database URL for SQLAlchemy asyncpg driver.
+        Prioritizes non-pooling or direct pooler URLs provided by Supabase / Vercel integrations.
+        """
+        raw = (
+            self.database_url
+            or self.superlearn_postgres_url_non_pooling
+            or self.superlearn_postgres_url
+            or self.superlearn_postgres_prisma_url
+            or self.postgres_url_non_pooling
+            or self.postgres_url
+            or os.environ.get("DATABASE_URL")
+            or os.environ.get("SUPERLEARN_POSTGRES_URL_NON_POOLING")
+            or os.environ.get("SUPERLEARN_POSTGRES_URL")
+            or os.environ.get("SUPERLEARN_POSTGRES_PRISMA_URL")
+            or os.environ.get("POSTGRES_URL")
+            or ""
+        ).strip()
+
+        if not raw:
+            return "sqlite+aiosqlite:///./superlearn_local.db"
+
+        url = raw
+        if "://" in url:
+            scheme, rest = url.split("://", 1)
+            # Remove unsupported query params for asyncpg like pgbouncer, supa, connection_limit
+            if "?" in rest:
+                base_part, query_part = rest.split("?", 1)
+                clean_params = [
+                    p for p in query_part.split("&")
+                    if not any(bad in p.lower() for bad in ["pgbouncer", "supa", "connection_limit"])
+                ]
+                query_str = "&".join(clean_params)
+                rest = f"{base_part}?{query_str}" if query_str else base_part
+            url = f"postgresql+asyncpg://{rest}"
+        else:
+            url = f"postgresql+asyncpg://{url}"
+
+        # Handle sslmode parameter for asyncpg compatibility
+        if "sslmode=require" in url:
+            url = url.replace("sslmode=require", "ssl=require")
+        elif "sslmode=disable" in url:
+            url = url.replace("sslmode=disable", "")
+
+        return url.rstrip("?&")
+
+    @property
+    def effective_supabase_url(self) -> str:
+        return (
+            self.supabase_url
+            or self.next_public_superlearn_taxgensupabase_url
+            or self.next_public_supabase_url
+            or os.environ.get("NEXT_PUBLIC_SUPERLEARN_TAXGENSUPABASE_URL")
+            or os.environ.get("SUPABASE_URL")
+            or ""
+        ).strip()
+
+    @property
+    def effective_supabase_anon_key(self) -> str:
+        return (
+            self.supabase_anon_key
+            or self.next_public_superlearn_taxgensupabase_anon_key
+            or self.next_public_supabase_anon_key
+            or os.environ.get("NEXT_PUBLIC_SUPERLEARN_TAXGENSUPABASE_ANON_KEY")
+            or os.environ.get("SUPABASE_ANON_KEY")
+            or ""
+        ).strip()
 
     @property
     def effective_qdrant_storage_path(self) -> str:

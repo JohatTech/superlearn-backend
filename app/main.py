@@ -10,7 +10,9 @@ Core Application Lifecycle & HTTP Gateway:
 - Mounts REST routers for Dynamic Syllabus, Contrast Reader, Schema & Testing.
 """
 
+# Relational persistence trigger reload for config update
 from __future__ import annotations
+
 import logging
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
@@ -27,6 +29,7 @@ from app.api.v1 import (
     multisource_contrast_router,
     mental_schema_router,
     bloom_assessment_router,
+    syllabus_master_router,
 )
 
 # Configure structured logging
@@ -92,6 +95,8 @@ app.include_router(dynamic_syllabus_router)
 app.include_router(multisource_contrast_router)
 app.include_router(mental_schema_router)
 app.include_router(bloom_assessment_router)
+app.include_router(syllabus_master_router)
+
 
 
 @app.get(
