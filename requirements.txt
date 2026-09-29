@@ -18,12 +18,20 @@ openai==1.58.1
 # Graph
 networkx==3.4.2
 
-# Document processing
+# Document & Image processing
 pypdf==5.1.0
 python-multipart==0.0.20
+opencv-python-headless>=4.10.0
+pillow>=10.0.0
 
 # Text processing
 tiktoken==0.8.0
 
 # Utils
 python-dotenv==1.0.1
+
+# LangChain Agents
+langchain==0.3.0
+langchain-ollama==0.3.0
+langchain-core==0.3.0
+

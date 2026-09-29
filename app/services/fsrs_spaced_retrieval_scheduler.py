@@ -7,53 +7,23 @@ Architectural Role:
 -------------------
 Implements an autonomous cognitive scheduling engine based on the Free Spaced 
 Repetition Scheduler (FSRS) mathematical model and cognitive psychology principles 
-(Bjork's Desirable Difficulty, Yerkes-Dodson Effort Curves).
+(Bjork's Desirable Difficulty, Yerkes-Dodson Effort Curves) scoped per classroom.
 
 Mathematical Formulation & Cognitive Laws:
 ------------------------------------------
 1. FSRS Memory Retrievability Decay Law:
    R(t, S) = (1 + t / (9 * S))^(-1)
-   where:
-     - t is elapsed time in days since last active retrieval.
-     - S is memory stability in days (time required for R to decay from 100% to 90%).
-     - R(t, S) in [0.0, 1.0] represents instantaneous probability of successful recall.
 
 2. Bjork's "Desirable Difficulty" Optimization Window:
-   Cognitive science demonstrates that retrieval practice produces maximal long-term 
-   potentiation when retrieval requires constructive cognitive effort.
    Optimal Practice Zone: R(t) in [0.70, 0.80] (centered at R* = 0.75).
-
-   Forgetting Pressure Gaussian Reward Function:
-   Phi_decay(R) = exp( - (R - 0.75)^2 / (2 * sigma_R^2) ), with sigma_R = 0.15.
-
-3. Concept Priority Recommendation Score:
-   PriorityScore(c) = w_mastery * (1.0 - m(c)) + w_decay * Phi_decay(R_c) + w_fresh * I_fresh(c)
-   where:
-     - w_mastery = 0.40 (incentivizes unmastered topics)
-     - w_decay = 0.40 (incentivizes reviews in the desirable difficulty sweet spot)
-     - w_fresh = 0.20 (promotes initial concept exploration)
-     - I_fresh(c) = 1 if concept c has never been reviewed, else 0.
-
-4. Yerkes-Dodson Effort Curve Evaluator:
-   Phi_effort(tau) = exp( - (tau - tau_star)^2 / (2 * sigma_tau^2) )
-   where tau_star = 120s (optimal struggle), sigma_tau = 45s.
-
-Academic Citations:
--------------------
-- Ye, J., et al. (2024). "Optimizing Spaced Repetition Schedules via Recurrent 
-  Neural Memory Decay Models." Journal of Artificial Intelligence in Education.
-- Bjork, E. L., & Bjork, R. A. (2011). "Making things hard on yourself, but in a 
-  good way: Creating desirable difficulties to enhance learning." Psychology and 
-  the Real World: Essays Illustrating Fundamental Contributions to Society, 2(1), 59-68.
-- Yerkes, R. M., & Dodson, J. D. (1908). "The relation of strength of stimulus 
-  to rapidity of habit-formation." Journal of Comparative Neurology and Psychology, 18(5), 459-482.
 """
 
 from __future__ import annotations
 import math
 import logging
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Optional
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.cognitive_config import cognitive_settings
 from app.services.knowledge_graph_engine import knowledge_graph_engine
 
@@ -63,16 +33,7 @@ logger = logging.getLogger("superlearn.fsrs_scheduler")
 def compute_fsrs_retrievability(stability_days: float, elapsed_days: float) -> float:
     """
     Calculate instantaneous memory retrievability probability R(t).
-
-    Formula:
-        R(t, S) = (1 + t / (9 * S))^(-1)
-
-    Args:
-        stability_days: Memory stability S in days (S >= 0.1).
-        elapsed_days: Elapsed time t in days since last active retrieval.
-
-    Returns:
-        Probability of successful memory recall R(t) in [0.0, 1.0].
+    Formula: R(t, S) = (1 + t / (9 * S))^(-1)
     """
     if stability_days <= 0.0:
         return 0.0
@@ -82,7 +43,6 @@ def compute_fsrs_retrievability(stability_days: float, elapsed_days: float) -> f
 def calculate_elapsed_days_since(timestamp: datetime | None) -> float:
     """
     Compute elapsed time in fractional days from a UTC timestamp to now.
-    If timestamp is None (never reviewed), returns infinity proxy (999.0 days).
     """
     if timestamp is None:
         return 999.0
@@ -98,18 +58,19 @@ class FsrsSpacedRetrievalScheduler:
     via FSRS memory stability modeling and desirable difficulty optimization.
     """
 
-    def compute_priority_recommendations(self, top_k: int = 5) -> list[dict[str, Any]]:
+    async def compute_priority_recommendations(
+        self,
+        db_session: AsyncSession,
+        classroom_id: Optional[str] = None,
+        top_k: int = 5,
+    ) -> list[dict[str, Any]]:
         """
         Rank and select the optimal concepts for immediate study from the 
-        developmental frontier.
-
-        Args:
-            top_k: Number of highest-priority concept recommendations to return.
-
-        Returns:
-            Ranked list of concept recommendation payloads with cognitive justifications.
+        developmental frontier of the target classroom.
         """
-        frontier_concepts = knowledge_graph_engine.compute_prerequisite_frontier_concepts()
+        frontier_concepts = await knowledge_graph_engine.compute_prerequisite_frontier_concepts(
+            db_session=db_session, classroom_id=classroom_id
+        )
         scored_candidates: list[dict[str, Any]] = []
 
         for candidate in frontier_concepts:
@@ -123,11 +84,9 @@ class FsrsSpacedRetrievalScheduler:
             retrievability = compute_fsrs_retrievability(stability_days, elapsed_days)
 
             # 1. Desirable Difficulty Gaussian: peak when R in [0.70, 0.80]
-            # Center = 0.75, Sigma = 0.15
             if retrievability > 0.20:
                 decay_pressure = math.exp(-((retrievability - 0.75) ** 2) / (2.0 * (0.15 ** 2)))
             else:
-                # Severe memory decay: maximum urgency to recover trace before extinction
                 decay_pressure = 1.0
 
             # 2. Freshness Exploration Bonus
@@ -158,31 +117,19 @@ class FsrsSpacedRetrievalScheduler:
         scored_candidates.sort(key=lambda item: item["priority_score"], reverse=True)
         return scored_candidates[:top_k]
 
-    def update_stability_post_assessment(
+    async def update_stability_post_assessment(
         self,
+        db_session: AsyncSession,
         concept_id: str,
         evaluation_score: float,
         effort_latency_seconds: int,
+        classroom_id: Optional[str] = None,
     ) -> dict[str, Any]:
         """
         Update FSRS memory stability (S) and difficulty (D) parameters following 
         an active retrieval test attempt.
-
-        Grading Scale:
-            - Grade 3 (Easy / Mastered): Score in [0.85, 1.0] -> Stability expands significantly.
-            - Grade 2 (Good / Solid): Score in [0.65, 0.85) -> Stability expands moderately.
-            - Grade 1 (Hard / Struggling): Score in [0.40, 0.65) -> Stability expands minimally.
-            - Grade 0 (Lapse / Failed): Score < 0.40 -> Stability resets to recovery floor.
-
-        Args:
-            concept_id: ID of the evaluated concept.
-            evaluation_score: Assessment score in [0.0, 1.0].
-            effort_latency_seconds: Total time spent formulating response.
-
-        Returns:
-            Dictionary containing updated stability, difficulty, and Yerkes-Dodson effort score.
         """
-        grand_graph = knowledge_graph_engine._grand_graph
+        grand_graph = await knowledge_graph_engine.get_grand_graph(db_session, classroom_id)
         node_data = grand_graph.nodes.get(concept_id, {})
 
         current_stability = node_data.get("fsrs_stability", 1.0)
@@ -205,7 +152,6 @@ class FsrsSpacedRetrievalScheduler:
         elif grade == 1:
             updated_stability = current_stability * 1.10
         else:
-            # Memory Lapse: compress stability toward base recovery
             updated_stability = max(0.50, current_stability * 0.40)
 
         # 3. Compute Updated Difficulty D'

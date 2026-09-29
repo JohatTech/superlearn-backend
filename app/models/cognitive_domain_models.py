@@ -5,14 +5,15 @@ COGNITIVE DOMAIN MODELS & ACADEMIC KNOWLEDGE GRAPH SCHEMAS
 
 This module defines the relational schema and domain entities modeling the 
 learner's cognitive state, knowledge structure topologies, FSRS memory stability 
-traces, and Bloom's taxonomy assessment histories.
+traces, classroom syllabus curriculum, mindmap extractions, and Bloom's taxonomy 
+assessment histories per classroom.
 
 Mathematical Formulation of Cognitive Entities:
 ----------------------------------------------
-1. Directed Acyclic Knowledge Graph (Grand Schema):
-   G_grand = (V, E_grand)
-   where V is the set of atomic concept nodes, and E_grand represents canonical 
-   prerequisite dependencies: (u, v) in E_grand implies concept u must precede concept v.
+1. Directed Acyclic Knowledge Graph (Grand Schema & Student Mental Schema):
+   G_grand = (V_grand, E_grand), G_user = (V_user, E_user)
+   where V is the set of atomic concept nodes scoped to a Classroom, and E represents
+   prerequisite or subjective dependency edges.
 
 2. Mastery State Vector:
    M(u) = [m(c_1), m(c_2), ..., m(c_n)], where m(c_i) in [0.0, 1.0].
@@ -25,6 +26,9 @@ Mathematical Formulation of Cognitive Entities:
      - D_c in [1.0, 10.0] is intrinsic cognitive difficulty.
      - t_last is UTC timestamp of last active retrieval event.
      - k_reviews is total successful retrieval count.
+
+4. Anti-Spoiler Assessment Sessions:
+   Ephemeral and persistent test session history per classroom and concept.
 
 Academic Citations:
 -------------------
@@ -59,10 +63,122 @@ def get_current_utc_timestamp() -> datetime:
     return datetime.now(timezone.utc)
 
 
+class ClassroomEntity(Base):
+    """
+    Relational representation of a study classroom containing syllabus,
+    mindmap graphs, and test histories.
+    """
+    __tablename__ = "classrooms"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    title: Mapped[str] = mapped_column(
+        String(255), nullable=False, unique=True, index=True
+    )
+    description: Mapped[str] = mapped_column(
+        Text, default="", nullable=False
+    )
+    topic_query: Mapped[str] = mapped_column(
+        String(255), nullable=False
+    )
+    is_approved: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+    mindmap_image_url: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )
+    mindmap_parsed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=get_current_utc_timestamp, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=get_current_utc_timestamp,
+        onupdate=get_current_utc_timestamp,
+        nullable=False,
+    )
+
+    # Relationships
+    syllabus_items: Mapped[list[SyllabusItemEntity]] = relationship(
+        "SyllabusItemEntity",
+        back_populates="classroom",
+        cascade="all, delete-orphan",
+        order_by="SyllabusItemEntity.order_index",
+    )
+    concepts: Mapped[list[ConceptEntity]] = relationship(
+        "ConceptEntity",
+        back_populates="classroom",
+        cascade="all, delete-orphan",
+    )
+    knowledge_edges: Mapped[list[KnowledgeEdgeEntity]] = relationship(
+        "KnowledgeEdgeEntity",
+        back_populates="classroom",
+        cascade="all, delete-orphan",
+    )
+    test_sessions: Mapped[list[AdaptiveTestSessionEntity]] = relationship(
+        "AdaptiveTestSessionEntity",
+        back_populates="classroom",
+        cascade="all, delete-orphan",
+    )
+    mindmap_uploads: Mapped[list[MindmapUploadEntity]] = relationship(
+        "MindmapUploadEntity",
+        back_populates="classroom",
+        cascade="all, delete-orphan",
+        order_by="MindmapUploadEntity.created_at.desc()",
+    )
+
+
+class SyllabusItemEntity(Base):
+    """
+    Syllabus topics under a specific classroom.
+    """
+    __tablename__ = "classroom_syllabus_items"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    classroom_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("classrooms.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(
+        String(255), nullable=False
+    )
+    description: Mapped[str] = mapped_column(
+        Text, default="", nullable=False
+    )
+    order_index: Mapped[int] = mapped_column(
+        Integer, nullable=False
+    )
+    concept_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("cognitive_concepts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=get_current_utc_timestamp, nullable=False
+    )
+
+    # Relationships
+    classroom: Mapped[ClassroomEntity] = relationship(
+        "ClassroomEntity",
+        back_populates="syllabus_items",
+    )
+    concept: Mapped[ConceptEntity] = relationship(
+        "ConceptEntity"
+    )
+
+
 class ConceptEntity(Base):
     """
     Relational representation of an atomic concept node within the 
-    Knowledge Graph G = (V, E).
+    Knowledge Graph G = (V, E), optionally scoped to a Classroom.
     """
     __tablename__ = "cognitive_concepts"
 
@@ -70,11 +186,26 @@ class ConceptEntity(Base):
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     name: Mapped[str] = mapped_column(
-        String(255), nullable=False, unique=True, index=True
+        String(255), nullable=False, index=True
+    )
+    classroom_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("classrooms.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
     )
     description: Mapped[str] = mapped_column(
         Text, default="", nullable=False
     )
+
+    # Graph Partition: 'grand' (canonical curriculum) vs 'user' (mental schema / mindmap extracted)
+    graph_partition: Mapped[str] = mapped_column(
+        String(16), default="grand", nullable=False, index=True
+    )
+
+    # Canvas Visual Coordinates (for persisting React Flow node positions)
+    position_x: Mapped[float | None] = mapped_column(Float, nullable=True)
+    position_y: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     # Bloom's Taxonomy Tier Baseline:
     # 1=Remember, 2=Understand, 3=Apply, 4=Analyze, 5=Evaluate, 6=Create
@@ -110,6 +241,9 @@ class ConceptEntity(Base):
     # -------------------------------------------------------------------------
     # Relationships
     # -------------------------------------------------------------------------
+    classroom: Mapped[ClassroomEntity | None] = relationship(
+        "ClassroomEntity", back_populates="concepts"
+    )
     outgoing_prerequisites: Mapped[list[KnowledgeEdgeEntity]] = relationship(
         "KnowledgeEdgeEntity",
         foreign_keys="KnowledgeEdgeEntity.source_concept_id",
@@ -132,13 +266,19 @@ class ConceptEntity(Base):
 class KnowledgeEdgeEntity(Base):
     """
     Relational representation of a directed dependency edge (u -> v) in the 
-    Knowledge Graph.
+    Knowledge Graph, scoped to a classroom.
     Can belong to the canonical 'grand' schema or a student's 'user' mental model.
     """
     __tablename__ = "cognitive_knowledge_edges"
 
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    classroom_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("classrooms.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
     )
     source_concept_id: Mapped[str] = mapped_column(
         String(36),
@@ -155,11 +295,18 @@ class KnowledgeEdgeEntity(Base):
     semantic_relation_label: Mapped[str] = mapped_column(
         String(255), default="prerequisite_for", nullable=False
     )
-    # Partition: 'grand' = canonical expert graph; 'user' = student's mental model
+    # Partition: 'grand' = canonical expert graph; 'user' = student's mental model / mindmap
     graph_partition: Mapped[str] = mapped_column(
         String(16), default="grand", nullable=False, index=True
     )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=get_current_utc_timestamp, nullable=False
+    )
 
+    # Relationships
+    classroom: Mapped[ClassroomEntity | None] = relationship(
+        "ClassroomEntity", back_populates="knowledge_edges"
+    )
     source_concept: Mapped[ConceptEntity] = relationship(
         "ConceptEntity",
         foreign_keys=[source_concept_id],
@@ -174,13 +321,19 @@ class KnowledgeEdgeEntity(Base):
 
 class AdaptiveTestSessionEntity(Base):
     """
-    Ephemeral anti-spoiler test session record capturing forced-generation responses, 
-    Bloom's taxonomy challenge levels, effort latencies, and rubric scoring.
+    Ephemeral & persistent test session record capturing forced-generation responses, 
+    Bloom's taxonomy challenge levels, effort latencies, and rubric scoring per classroom.
     """
     __tablename__ = "cognitive_test_sessions"
 
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    classroom_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("classrooms.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
     )
     concept_id: Mapped[str | None] = mapped_column(
         String(36),
@@ -200,6 +353,12 @@ class AdaptiveTestSessionEntity(Base):
     detected_misconceptions_json: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="JSON serialized list of detected misconception strings"
     )
+    strengths_json: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="JSON serialized list of demonstrated strengths"
+    )
+    suggested_review_json: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="JSON serialized list of concepts suggested for review"
+    )
 
     # Cognitive Effort Metric: Latency in seconds from presentation to submission
     effort_latency_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -214,8 +373,41 @@ class AdaptiveTestSessionEntity(Base):
         DateTime(timezone=True), nullable=True
     )
 
+    # Relationships
+    classroom: Mapped[ClassroomEntity | None] = relationship(
+        "ClassroomEntity", back_populates="test_sessions"
+    )
     tested_concept: Mapped[ConceptEntity | None] = relationship(
         "ConceptEntity", back_populates="test_sessions"
+    )
+
+
+class MindmapUploadEntity(Base):
+    """
+    Historical record of uploaded mind map images and extracted graphs per classroom.
+    """
+    __tablename__ = "classroom_mindmaps"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    classroom_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("classrooms.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    parsed_nodes_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    parsed_edges_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    extracted_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=get_current_utc_timestamp, nullable=False
+    )
+
+    classroom: Mapped[ClassroomEntity] = relationship(
+        "ClassroomEntity", back_populates="mindmap_uploads"
     )
 
 
